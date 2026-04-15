@@ -56,6 +56,11 @@ _ensure_java() {
         _warn "Java $ver is too old; need >= 11."
     fi
 
+    # Skip installation if in GitHub Actions (should be handled by actions/setup-java)
+    if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+        _die "Java not found or too old in GitHub Actions runner. Ensure 'actions/setup-java' is used in the workflow."
+    fi
+
     _log "Installing OpenJDK 17..."
     if command -v apt-get &>/dev/null; then
         export DEBIAN_FRONTEND=noninteractive
