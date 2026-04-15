@@ -1,0 +1,61 @@
+name: Build Android
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Type de build'
+        required: true
+        default: 'apk'
+        type: choice
+        options:
+          - apk
+          - aab
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Unzip project
+        run: |
+          if [ -f "project.zip" ]; then
+            unzip -q project.zip -d project
+            rm project.zip
+            mv project/* . || true
+            # Move hidden files as well
+            mv project/.* . || true
+            rm -rf project
+          else
+            echo "project.zip not found!"
+            exit 1
+          fi
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build APK (Debug)
+        if: ${{ inputs.build_type == 'apk' }}
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Build AAB (Release)
+        if: ${{ inputs.build_type == 'aab' }}
+        run: ./gradlew bundleRelease --stacktrace
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-result
+          path: |
+            **/build/outputs/apk/**/*.apk
+            **/build/outputs/bundle/**/*.aab
+          retention-days: 7
