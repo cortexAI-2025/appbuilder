@@ -74,7 +74,7 @@ export const triggerWorkflow = async (settings: GithubSettings, buildType: 'apk'
     await octokit.rest.actions.createWorkflowDispatch({
       owner: settings.owner,
       repo: settings.repo,
-      workflow_id: 'build-android.yml',
+      workflow_id: 'main.yml',
       ref: repoData.default_branch,
       inputs: {
         build_type: buildType,
@@ -93,7 +93,7 @@ export const getLatestWorkflowRun = async (settings: GithubSettings) => {
     const { data } = await octokit.rest.actions.listWorkflowRuns({
       owner: settings.owner,
       repo: settings.repo,
-      workflow_id: 'build-android.yml',
+      workflow_id: 'main.yml',
       per_page: 1,
     });
     return { success: true, run: data.workflow_runs[0] };
