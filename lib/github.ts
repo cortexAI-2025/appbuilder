@@ -63,16 +63,22 @@ export const uploadProjectZip = async (settings: GithubSettings, file: File) => 
   }
 };
 
-export const triggerWorkflow = async (settings: GithubSettings, buildType: 'apk' | 'aab') => {
+export const triggerWorkflow = async (settings: GithubSettings, buildType: 'apk' | 'aab', signRelease: boolean = false) => {
   const octokit = new Octokit({ auth: settings.token });
   try {
+    const { data: repoData } = await octokit.rest.repos.get({
+      owner: settings.owner,
+      repo: settings.repo,
+    });
+
     await octokit.rest.actions.createWorkflowDispatch({
       owner: settings.owner,
       repo: settings.repo,
       workflow_id: 'build-android.yml',
-      ref: 'main', // Assuming main branch, could be improved
+      ref: repoData.default_branch,
       inputs: {
         build_type: buildType,
+        sign_release: String(signRelease),
       },
     });
     return { success: true };

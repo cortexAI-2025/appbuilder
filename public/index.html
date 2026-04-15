@@ -1,0 +1,685 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Android Builder — APK &amp; AAB</title>
+  <style>
+    /* ─── Reset & Base ──────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d27;
+      --border:   #2a2d3e;
+      --text:     #e2e4f0;
+      --muted:    #6b7280;
+      --accent:   #6366f1;
+      --accent2:  #818cf8;
+      --green:    #22c55e;
+      --yellow:   #f59e0b;
+      --red:      #ef4444;
+      --blue:     #38bdf8;
+      --radius:   12px;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+    }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    /* ─── Layout ────────────────────────────────────────────────────────── */
+    .app {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px 80px;
+    }
+    .card {
+      width: 100%;
+      max-width: 780px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .card + .card { margin-top: 20px; }
+
+    /* ─── Header ────────────────────────────────────────────────────────── */
+    header {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, var(--accent2) 0%, #a78bfa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    header p {
+      color: var(--muted);
+      margin-top: 6px;
+      font-size: 0.93rem;
+    }
+
+    /* ─── Drop zone ─────────────────────────────────────────────────────── */
+    .drop-zone {
+      padding: 40px 24px;
+      border-bottom: 1px solid var(--border);
+    }
+    .drop-area {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    .drop-area:hover,
+    .drop-area.drag-over {
+      border-color: var(--accent);
+      background: rgba(99, 102, 241, 0.06);
+    }
+    .drop-area input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+    .drop-icon {
+      font-size: 3rem;
+      line-height: 1;
+      margin-bottom: 16px;
+      display: block;
+    }
+    .drop-area h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    .drop-area p {
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    .file-chosen {
+      margin-top: 18px;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      background: rgba(99,102,241,0.08);
+      border: 1px solid rgba(99,102,241,0.25);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.88rem;
+    }
+    .file-chosen.visible { display: flex; }
+    .file-chosen .fname {
+      flex: 1;
+      font-family: var(--font-mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--accent2);
+    }
+    .file-chosen .fsize { color: var(--muted); flex-shrink: 0; }
+    .remove-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1.1rem;
+      line-height: 1;
+      padding: 2px;
+      flex-shrink: 0;
+    }
+    .remove-btn:hover { color: var(--red); }
+
+    /* ─── Build button ──────────────────────────────────────────────────── */
+    .build-area {
+      padding: 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .btn-build {
+      flex: 1;
+      background: linear-gradient(135deg, var(--accent) 0%, #4f46e5 100%);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 14px 28px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.5px;
+      transition: opacity 0.2s, transform 0.1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+    .btn-build:hover:not(:disabled) { opacity: 0.92; transform: translateY(-1px); }
+    .btn-build:active:not(:disabled) { transform: translateY(0); }
+    .btn-build:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .btn-build .spinner {
+      display: none;
+      width: 18px; height: 18px;
+      border: 2.5px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    .btn-build.loading .spinner { display: block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── Status badge ──────────────────────────────────────────────────── */
+    .status-badge {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 100px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+    .status-badge.visible { display: flex; }
+    .status-badge.RUNNING  { background: rgba(56,189,248,0.12); color: var(--blue); border: 1px solid rgba(56,189,248,0.3); }
+    .status-badge.SUCCESS  { background: rgba(34,197,94,0.12);  color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+    .status-badge.PARTIAL  { background: rgba(245,158,11,0.12); color: var(--yellow); border: 1px solid rgba(245,158,11,0.3); }
+    .status-badge.FAILED   { background: rgba(239,68,68,0.12);  color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+
+    /* ─── Terminal log ──────────────────────────────────────────────────── */
+    .log-section { display: none; }
+    .log-section.visible { display: block; }
+    .log-header {
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    .log-header span { font-weight: 600; color: var(--text); }
+    .scroll-bottom {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 3px 10px;
+      cursor: pointer;
+      font-size: 0.78rem;
+    }
+    .scroll-bottom:hover { color: var(--text); border-color: var(--accent); }
+    .terminal {
+      background: #0a0c12;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      line-height: 1.65;
+      padding: 16px 18px;
+      height: 320px;
+      overflow-y: auto;
+      color: #c9d1d9;
+    }
+    .terminal::-webkit-scrollbar { width: 6px; }
+    .terminal::-webkit-scrollbar-track { background: transparent; }
+    .terminal::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .log-line { white-space: pre-wrap; word-break: break-all; }
+    .log-line.ok    { color: #4ade80; }
+    .log-line.warn  { color: #fbbf24; }
+    .log-line.fail  { color: #f87171; }
+    .log-line.info  { color: #93c5fd; }
+    .log-line.muted { color: #6b7280; }
+
+    /* ─── Artifacts ─────────────────────────────────────────────────────── */
+    .artifacts-section { display: none; }
+    .artifacts-section.visible { display: block; }
+    .artifacts-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.82rem;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .artifacts-header span { font-weight: 600; color: var(--text); }
+    .duration-tag {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+    .artifact-list {
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .artifact-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+    }
+    .artifact-icon {
+      font-size: 1.6rem;
+      flex-shrink: 0;
+    }
+    .artifact-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .artifact-name {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .artifact-meta {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 100px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-right: 6px;
+    }
+    .tag.apk { background: rgba(56,189,248,0.15); color: var(--blue); }
+    .tag.aab { background: rgba(167,139,250,0.15); color: #a78bfa; }
+    .btn-download {
+      flex-shrink: 0;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 9px 18px;
+      font-size: 0.83rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: opacity 0.15s;
+    }
+    .btn-download:hover { opacity: 0.85; }
+
+    /* ─── Error panel ───────────────────────────────────────────────────── */
+    .errors-section { display: none; }
+    .errors-section.visible { display: block; }
+    .errors-list {
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .error-item {
+      background: rgba(239,68,68,0.07);
+      border: 1px solid rgba(239,68,68,0.2);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: #fca5a5;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    /* ─── Misc ──────────────────────────────────────────────────────────── */
+    .section-title {
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .no-artifacts {
+      padding: 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+    footer {
+      margin-top: 40px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <h1>Android Builder</h1>
+    <p>Drop a GitHub project .zip — get an installable APK &amp; AAB</p>
+  </header>
+
+  <!-- ── Upload card ─────────────────────────────────────────────────────── -->
+  <div class="card" id="upload-card">
+    <div class="drop-zone">
+      <div class="drop-area" id="drop-area">
+        <input type="file" id="file-input" accept=".zip" />
+        <span class="drop-icon">📦</span>
+        <h2>Drag &amp; drop your .zip here</h2>
+        <p>or click to browse — Android Gradle project archives only</p>
+      </div>
+      <div class="file-chosen" id="file-chosen">
+        <span class="fname" id="file-name"></span>
+        <span class="fsize" id="file-size"></span>
+        <button class="remove-btn" id="remove-btn" title="Remove">✕</button>
+      </div>
+    </div>
+
+    <div class="build-area">
+      <button class="btn-build" id="btn-build" disabled>
+        <span class="spinner"></span>
+        <span id="btn-label">&#9654;&nbsp; Build</span>
+      </button>
+      <div class="status-badge" id="status-badge">
+        <span id="status-dot">●</span>
+        <span id="status-text">RUNNING</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Log card ────────────────────────────────────────────────────────── -->
+  <div class="card log-section" id="log-card">
+    <div class="log-header">
+      <span>Build Log</span>
+      <button class="scroll-bottom" id="scroll-btn">&#9660; Bottom</button>
+    </div>
+    <div class="terminal" id="terminal"></div>
+  </div>
+
+  <!-- ── Artifacts card ──────────────────────────────────────────────────── -->
+  <div class="card artifacts-section" id="artifacts-card">
+    <div class="artifacts-header">
+      <span>Artifacts</span>
+      <span class="duration-tag" id="duration-tag"></span>
+    </div>
+    <div class="artifact-list" id="artifact-list">
+      <div class="no-artifacts">No artifacts yet.</div>
+    </div>
+  </div>
+
+  <!-- ── Errors card ─────────────────────────────────────────────────────── -->
+  <div class="card errors-section" id="errors-card">
+    <div class="section-title">Errors</div>
+    <div class="errors-list" id="errors-list"></div>
+  </div>
+
+  <footer>cortexai-2025 / builder-aab-apk</footer>
+
+</div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let selectedFile = null;
+let buildId      = null;
+let autoScroll   = true;
+
+// ─── Elements ────────────────────────────────────────────────────────────────
+const dropArea      = document.getElementById('drop-area');
+const fileInput     = document.getElementById('file-input');
+const fileChosen    = document.getElementById('file-chosen');
+const fileNameEl    = document.getElementById('file-name');
+const fileSizeEl    = document.getElementById('file-size');
+const removeBtn     = document.getElementById('remove-btn');
+const btnBuild      = document.getElementById('btn-build');
+const btnLabel      = document.getElementById('btn-label');
+const statusBadge   = document.getElementById('status-badge');
+const statusText    = document.getElementById('status-text');
+const logCard       = document.getElementById('log-card');
+const terminal      = document.getElementById('terminal');
+const scrollBtn     = document.getElementById('scroll-btn');
+const artifactsCard = document.getElementById('artifacts-card');
+const artifactList  = document.getElementById('artifact-list');
+const durationTag   = document.getElementById('duration-tag');
+const errorsCard    = document.getElementById('errors-card');
+const errorsList    = document.getElementById('errors-list');
+
+// ─── Drag & Drop ──────────────────────────────────────────────────────────────
+dropArea.addEventListener('dragover',  e => { e.preventDefault(); dropArea.classList.add('drag-over'); });
+dropArea.addEventListener('dragleave', () => dropArea.classList.remove('drag-over'));
+dropArea.addEventListener('drop', e => {
+  e.preventDefault();
+  dropArea.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) applyFile(file);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) applyFile(fileInput.files[0]);
+});
+removeBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  clearFile();
+});
+
+function applyFile(file) {
+  if (!file.name.toLowerCase().endsWith('.zip')) {
+    appendLog('Only .zip files are accepted.', 'fail');
+    return;
+  }
+  selectedFile = file;
+  fileNameEl.textContent = file.name;
+  fileSizeEl.textContent = fmtSize(file.size);
+  fileChosen.classList.add('visible');
+  btnBuild.disabled = false;
+}
+
+function clearFile() {
+  selectedFile = null;
+  fileInput.value = '';
+  fileChosen.classList.remove('visible');
+  btnBuild.disabled = true;
+}
+
+// ─── Build ────────────────────────────────────────────────────────────────────
+btnBuild.addEventListener('click', startBuild);
+
+async function startBuild() {
+  if (!selectedFile) return;
+
+  // Reset UI
+  terminal.innerHTML = '';
+  artifactList.innerHTML = '<div class="no-artifacts">Building…</div>';
+  errorsList.innerHTML = '';
+  durationTag.textContent = '';
+  logCard.classList.add('visible');
+  artifactsCard.classList.add('visible');
+  errorsCard.classList.remove('visible');
+  autoScroll = true;
+
+  // Disable button, show spinner
+  btnBuild.disabled = true;
+  btnBuild.classList.add('loading');
+  btnLabel.textContent = 'Building…';
+  setStatus('RUNNING');
+
+  const form = new FormData();
+  form.append('zip', selectedFile);
+
+  let res;
+  try {
+    res = await fetch('/api/build', { method: 'POST', body: form });
+  } catch (err) {
+    appendLog('Network error: ' + err.message, 'fail');
+    resetButton();
+    setStatus('FAILED');
+    return;
+  }
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    appendLog('Server error: ' + (err.error || res.statusText), 'fail');
+    resetButton();
+    setStatus('FAILED');
+    return;
+  }
+
+  const { buildId: id } = await res.json();
+  buildId = id;
+  appendLog(`Build ID: ${id}`, 'muted');
+
+  // Open SSE stream
+  const evtSource = new EventSource(`/api/build/${id}/stream`);
+
+  evtSource.onmessage = e => {
+    const msg = JSON.parse(e.data);
+
+    if (msg.type === 'log') {
+      appendLog(msg.line);
+    } else if (msg.type === 'result') {
+      evtSource.close();
+      renderResult(msg.build);
+      resetButton();
+    }
+  };
+
+  evtSource.onerror = () => {
+    evtSource.close();
+    // Try polling status once
+    fetch(`/api/build/${id}`)
+      .then(r => r.json())
+      .then(b => { renderResult(b); resetButton(); })
+      .catch(() => { appendLog('Connection lost.', 'fail'); resetButton(); setStatus('FAILED'); });
+  };
+}
+
+// ─── Render final result ──────────────────────────────────────────────────────
+function renderResult(build) {
+  setStatus(build.status);
+  durationTag.textContent = `${build.duration}s`;
+
+  // Artifacts
+  const items = [...(build.apks || []), ...(build.aabs || [])];
+  if (items.length === 0) {
+    artifactList.innerHTML = '<div class="no-artifacts">No artifacts produced.</div>';
+  } else {
+    artifactList.innerHTML = '';
+    (build.apks || []).forEach(a => artifactList.appendChild(artifactEl(a, 'apk', build.id)));
+    (build.aabs || []).forEach(a => artifactList.appendChild(artifactEl(a, 'aab', build.id)));
+  }
+
+  // Errors
+  if (build.errors && build.errors.length) {
+    errorsCard.classList.add('visible');
+    errorsList.innerHTML = '';
+    build.errors.forEach(e => {
+      const d = document.createElement('div');
+      d.className = 'error-item';
+      d.textContent = e;
+      errorsList.appendChild(d);
+    });
+  }
+}
+
+function artifactEl(artifact, type, id) {
+  const item = document.createElement('div');
+  item.className = 'artifact-item';
+
+  const icon  = type === 'apk' ? '📱' : '📦';
+  const label = type === 'apk' ? 'Debug APK' : 'Release AAB';
+  const name  = artifact.name || artifact;
+  const size  = artifact.size || '';
+  const href  = `/api/build/${id}/download/${encodeURIComponent(name)}`;
+
+  item.innerHTML = `
+    <div class="artifact-icon">${icon}</div>
+    <div class="artifact-info">
+      <div class="artifact-name">${escHtml(name)}</div>
+      <div class="artifact-meta"><span class="tag ${type}">${type.toUpperCase()}</span>${escHtml(label)}${size ? ' &middot; ' + escHtml(size) : ''}</div>
+    </div>
+    <a class="btn-download" href="${href}" download="${escHtml(name)}">
+      &#8595; Download
+    </a>`;
+  return item;
+}
+
+// ─── Terminal helpers ─────────────────────────────────────────────────────────
+function appendLog(line, cls = '') {
+  const div = document.createElement('div');
+  div.className = 'log-line' + (cls ? ' ' + cls : '') + ' ' + detectLineClass(line);
+  div.textContent = line;
+  terminal.appendChild(div);
+  if (autoScroll) terminal.scrollTop = terminal.scrollHeight;
+}
+
+function detectLineClass(line) {
+  if (/\[OK\]|BUILD SUCCESSFUL|:ok_hand:|SUCCESS/.test(line))    return 'ok';
+  if (/\[WARN\]|warning:|WARNING/.test(line))                    return 'warn';
+  if (/\[FAIL\]|error:|ERROR|FAILED|Exception/.test(line))       return 'fail';
+  if (/\[Builder\]|\[setup_env\]|\[analyze\]|\[sign\]/.test(line)) return 'info';
+  if (/^─+$/.test(line.trim()))                                  return 'muted';
+  return '';
+}
+
+terminal.addEventListener('scroll', () => {
+  const atBottom = terminal.scrollHeight - terminal.clientHeight - terminal.scrollTop < 30;
+  autoScroll = atBottom;
+});
+scrollBtn.addEventListener('click', () => {
+  terminal.scrollTop = terminal.scrollHeight;
+  autoScroll = true;
+});
+
+// ─── Status badge ─────────────────────────────────────────────────────────────
+function setStatus(s) {
+  statusBadge.className = `status-badge visible ${s}`;
+  statusText.textContent = s;
+}
+
+// ─── Reset build button ───────────────────────────────────────────────────────
+function resetButton() {
+  btnBuild.classList.remove('loading');
+  btnBuild.disabled = false;
+  btnLabel.textContent = '↺  Build again';
+}
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+function fmtSize(bytes) {
+  if (bytes < 1024)        return bytes + ' B';
+  if (bytes < 1048576)     return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>
