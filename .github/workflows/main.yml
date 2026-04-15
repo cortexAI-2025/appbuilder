@@ -1,97 +1,140 @@
-name: Build Android APK-AAB
+name: Build Android APK/AAB
 
 on:
   workflow_dispatch:
     inputs:
       build_type:
-        description: "Format de sortie (apk ou aab)"
+        description: 'Format de sortie'
         required: true
-        default: "apk"
+        default: 'apk'
         type: choice
         options:
           - apk
           - aab
-
-permissions:
-  contents: write  # Crucial pour permettre l'enregistrement du fichier sur le repo
+      sign_release:
+        description: "Signer l'artifact (Release)"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build:
-    name: "Compilation Android"
+    name: "Build Android"
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout du code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    timeout-minutes: 60
 
-      - name: Configuration de Java 17
+    env:
+      ANDROID_HOME: ${{ github.workspace }}/android-sdk
+      OUTPUT_DIR:   ${{ github.workspace }}/build-output
+      WORK_DIR:     /tmp/android_build
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
+          java-version: "17"
+          distribution: "temurin"
+          cache: "gradle"
 
-      - name: Preparation et Extraction
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/android-sdk
+          key: android-sdk-34-${{ runner.os }}-v2
+          restore-keys: |
+            android-sdk-34-${{ runner.os }}-
+            android-sdk-${{ runner.os }}-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Prepare Project (Smart Detection & Normalization)
         run: |
-          # 1. Gestion du ZIP si présent
-          if [ -f "project.zip" ]; then
-            mkdir -p extraction_tmp
-            unzip -o project.zip -d extraction_tmp
-            ROOT_DIR=$(find extraction_tmp -type f -name "gradlew" -exec dirname {} \; | head -n 1)
-            if [ -n "$ROOT_DIR" ]; then
-              cp -r "$ROOT_DIR"/* .
-              echo "✅ Projet extrait depuis le ZIP"
+          if [ ! -f "project.zip" ]; then
+            echo "project.zip not found! This workflow expects project.zip to be present in the root."
+            exit 1
+          fi
+
+          mkdir -p extraction_tmp
+          unzip -q project.zip -d extraction_tmp
+
+          echo "🔍 Recherche du projet Android légitime..."
+          # On liste tous les dossiers contenant un gradlew
+          CANDIDATES=$(find extraction_tmp -type f -name "gradlew" -exec dirname {} \;)
+          VALID_ROOT=""
+
+          for dir in $CANDIDATES; do
+            if [ -f "$dir/settings.gradle" ] || [ -f "$dir/settings.gradle.kts" ]; then
+              VALID_ROOT=$dir
+              break
             fi
-            rm -rf extraction_tmp
-          fi
-          
-          # 2. Vérification du moteur Gradle (WebView Shell)
-          if [ ! -f "gradlew" ]; then
-            echo "❌ Aucun gradlew trouvé. Jules doit ajouter le moteur Gradle au projet."
-            exit 1
-          fi
-          chmod +x gradlew
+          done
 
-      - name: Build avec Gradle
-        run: |
-          if [ "${{ github.event.inputs.build_type }}" == "apk" ]; then
-            ./gradlew assembleDebug
-          else
-            ./gradlew bundleRelease
+          if [ -z "$VALID_ROOT" ]; then
+            echo "⚠️ Avertissement : Structure complexe non détectée, fallback sur le premier gradlew trouvé."
+            VALID_ROOT=$(find extraction_tmp -type f -name "gradlew" -exec dirname {} \; | head -n 1)
           fi
 
-      - name: Enregistrement sur le Repo (Racine)
-        run: |
-          REPO_NAME=$(basename ${{ github.repository }})
-          EXTENSION="${{ github.event.inputs.build_type }}"
-          
-          # Identification du fichier généré
-          if [ "$EXTENSION" == "apk" ]; then
-            SOURCE_FILE=$(find . -name "*-debug.apk" | head -n 1)
-          else
-            SOURCE_FILE=$(find . -name "*-release.aab" | head -n 1)
-          fi
-          
-          if [ -f "$SOURCE_FILE" ]; then
-            # Renommage et déplacement à la racine
-            cp "$SOURCE_FILE" "./${REPO_NAME}.${EXTENSION}"
-            
-            # Commit et Push automatique
-            git config --global user.name "github-actions[bot]"
-            git config --global user.email "github-actions[bot]@users.noreply.github.com"
-            git add "./${REPO_NAME}.${EXTENSION}"
-            git commit -m "🚀 Auto-build : Mise à jour de ${REPO_NAME}.${EXTENSION}"
-            git push origin HEAD:${{ github.ref }}
-            echo "✅ ${REPO_NAME}.${EXTENSION} a été enregistré à la racine."
-          else
-            echo "❌ Erreur : Artifact introuvable après le build."
+          if [ -z "$VALID_ROOT" ]; then
+            echo "❌ ERREUR : Aucun projet Android valide trouvé dans le ZIP."
+            ls -R extraction_tmp
             exit 1
           fi
 
-      - name: Exportation Artifact (GitHub UI)
+          echo "✅ Racine identifiée : $VALID_ROOT"
+          mkdir -p build_project
+          cp -r "$VALID_ROOT"/* build_project/
+          rm -rf extraction_tmp project.zip
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Run build pipeline
+        id: build_pipeline
+        run: |
+          mkdir -p "$OUTPUT_DIR"
+
+          KEYSTORE_PATH="${{ secrets.KEYSTORE_PATH || '' }}" \
+          KEYSTORE_ALIAS="${{ secrets.KEYSTORE_ALIAS || '' }}" \
+          KEYSTORE_PASS="${{ secrets.KEYSTORE_PASS || '' }}" \
+          KEY_PASS="${{ secrets.KEY_PASS || '' }}" \
+          bash scripts/build.sh "build_project" 2>&1 | tee "$OUTPUT_DIR/pipeline.log"
+
+          # Capture JSON result
+          python3 -c "
+          import sys, json, re
+          text = open('$OUTPUT_DIR/pipeline.log').read()
+          matches = re.findall(r'\{[^{}]*\"status\"[^{}]*\}', text, re.S)
+          if matches:
+              obj = json.loads(matches[-1])
+              print('BUILD_STATUS=' + obj.get('status','FAILED'))
+          else:
+              print('BUILD_STATUS=FAILED')
+          " >> $GITHUB_ENV
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event.inputs.build_type }}-result
+          name: android-build-result
           path: |
-            **/*.apk
-            **/*.aab
+            ${{ env.OUTPUT_DIR }}/*.apk
+            ${{ env.OUTPUT_DIR }}/*.aab
+            ${{ env.OUTPUT_DIR }}/*.log
+          retention-days: 7
+
+      - name: Check build result
+        run: |
+          if [[ "${BUILD_STATUS}" == "FAILED" ]]; then
+            echo "Build FAILED — check logs for details."
+            exit 1
+          fi
