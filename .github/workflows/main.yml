@@ -12,7 +12,7 @@ on:
           - apk
           - aab
       sign_release:
-        description: 'Signer l’artifact (Release)'
+        description: "Signer l'artifact (Release)"
         required: false
         default: false
         type: boolean
