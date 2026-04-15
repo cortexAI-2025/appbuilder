@@ -25,6 +25,11 @@ ENV PATH="${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/platform-tool
 # ─── JDK version ─────────────────────────────────────────────────────────────
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
+# ─── Gradle engine ───────────────────────────────────────────────────────────
+ENV GRADLE_VERSION=8.8
+ENV GRADLE_HOME=/opt/gradle/gradle-${GRADLE_VERSION}
+ENV PATH="${GRADLE_HOME}/bin:${PATH}"
+
 # ─── System packages ─────────────────────────────────────────────────────────
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \
@@ -41,6 +46,12 @@ RUN apt-get update -qq && \
         shellcheck \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# ─── Download Gradle ─────────────────────────────────────────────────────────
+RUN mkdir -p /opt/gradle && \
+    wget -q "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" -O /tmp/gradle.zip && \
+    unzip -q /tmp/gradle.zip -d /opt/gradle && \
+    rm /tmp/gradle.zip
 
 # ─── Download Android command-line tools ─────────────────────────────────────
 ARG CMDLINE_TOOLS_VERSION=11076708
