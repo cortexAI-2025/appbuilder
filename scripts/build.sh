@@ -132,11 +132,18 @@ run_build() {
 
     cd "$PROJECT_DIR"
 
-    chmod +x gradlew
+    # Determine Gradle command
+    local gradle_cmd="./gradlew"
+    if [[ ! -f "gradlew" ]]; then
+        warn "gradlew not found in project. Falling back to system gradle."
+        gradle_cmd="gradle"
+    else
+        chmod +x gradlew
+    fi
 
     # ── Clean ──────────────────────────────────────────────────────────────────
-    log "Running: ./gradlew clean"
-    if ! timeout "$BUILD_TIMEOUT" ./gradlew clean \
+    log "Running: $gradle_cmd clean"
+    if ! timeout "$BUILD_TIMEOUT" $gradle_cmd clean \
             -PANDROID_HOME="$ANDROID_HOME" \
             --no-daemon --stacktrace 2>&1 \
         | tee "$OUTPUT_DIR/clean.log"; then
@@ -144,9 +151,9 @@ run_build() {
     fi
 
     # ── APK Debug ─────────────────────────────────────────────────────────────
-    log "Running: ./gradlew assembleDebug"
+    log "Running: $gradle_cmd assembleDebug"
     local apk_rc=0
-    timeout "$BUILD_TIMEOUT" ./gradlew assembleDebug \
+    timeout "$BUILD_TIMEOUT" $gradle_cmd assembleDebug \
             -PANDROID_HOME="$ANDROID_HOME" \
             --no-daemon --stacktrace 2>&1 \
         | tee "$OUTPUT_DIR/assembleDebug.log" || apk_rc=$?
@@ -157,7 +164,7 @@ run_build() {
         apply_auto_fixes "$OUTPUT_DIR/assembleDebug.log"
 
         log "Retrying assembleDebug after auto-fix…"
-        timeout "$BUILD_TIMEOUT" ./gradlew assembleDebug \
+        timeout "$BUILD_TIMEOUT" $gradle_cmd assembleDebug \
                 -PANDROID_HOME="$ANDROID_HOME" \
                 --no-daemon --stacktrace 2>&1 \
             | tee "$OUTPUT_DIR/assembleDebug_retry.log" \
@@ -167,9 +174,9 @@ run_build() {
     collect_apks
 
     # ── AAB Release ───────────────────────────────────────────────────────────
-    log "Running: ./gradlew bundleRelease"
+    log "Running: $gradle_cmd bundleRelease"
     local aab_rc=0
-    timeout "$BUILD_TIMEOUT" ./gradlew bundleRelease \
+    timeout "$BUILD_TIMEOUT" $gradle_cmd bundleRelease \
             -PANDROID_HOME="$ANDROID_HOME" \
             --no-daemon --stacktrace 2>&1 \
         | tee "$OUTPUT_DIR/bundleRelease.log" || aab_rc=$?

@@ -83,9 +83,9 @@ _check_build_readiness() {
         missing+=("settings.gradle")
     fi
 
-    # gradlew
+    # gradlew (optional now as we have a standalone engine fallback)
     if [[ ! -f "$dir/gradlew" ]]; then
-        missing+=("gradlew")
+        _ap_warn "gradlew not found — will use system Gradle engine."
     fi
 
     # app module

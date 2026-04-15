@@ -5,6 +5,8 @@
 # =============================================================================
 
 # ─── Constants ────────────────────────────────────────────────────────────────
+GRADLE_VERSION="8.8"
+GRADLE_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
 CMDLINE_TOOLS_VERSION="11076708"   # commandlinetools-linux-11076708_latest.zip
 CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-${CMDLINE_TOOLS_VERSION}_latest.zip"
 DEFAULT_ANDROID_HOME="${HOME}/android-sdk"
@@ -26,6 +28,9 @@ setup_android_env() {
     _log "Checking Java installation..."
     _ensure_java
 
+    _log "Checking Gradle installation..."
+    _ensure_gradle
+
     ANDROID_HOME="${ANDROID_HOME:-$DEFAULT_ANDROID_HOME}"
     export ANDROID_HOME
     export ANDROID_SDK_ROOT="$ANDROID_HOME"
@@ -42,6 +47,40 @@ setup_android_env() {
     _accept_licenses
     _install_sdk_packages
     _verify_sdk
+}
+
+# ─── Gradle check / install ───────────────────────────────────────────────────
+_ensure_gradle() {
+    if command -v gradle &>/dev/null; then
+        local gver
+        gver=$(gradle -v | grep "Gradle" | awk '{print $2}')
+        _log "Gradle $gver found: $(command -v gradle)"
+        return
+    fi
+
+    local install_root="/opt/gradle"
+    [[ -w "/opt" ]] || install_root="${HOME}/gradle-engine"
+
+    if [[ -x "$install_root/gradle-${GRADLE_VERSION}/bin/gradle" ]]; then
+        export PATH="$install_root/gradle-${GRADLE_VERSION}/bin:$PATH"
+        _log "Gradle found in $install_root"
+        return
+    fi
+
+    _log "Installing Gradle ${GRADLE_VERSION}..."
+    local tmp_zip; tmp_zip=$(mktemp /tmp/gradle-XXXXXX.zip)
+    if command -v wget &>/dev/null; then
+        wget -q --show-progress "$GRADLE_URL" -O "$tmp_zip"
+    else
+        curl -fsSL "$GRADLE_URL" -o "$tmp_zip"
+    fi
+
+    mkdir -p "$install_root"
+    unzip -q "$tmp_zip" -d "$install_root"
+    export PATH="$install_root/gradle-${GRADLE_VERSION}/bin:$PATH"
+    rm -f "$tmp_zip"
+
+    _log "Gradle installed at $(command -v gradle)"
 }
 
 # ─── Java check / install ─────────────────────────────────────────────────────

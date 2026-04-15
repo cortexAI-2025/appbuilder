@@ -1,0 +1,4 @@
+// Basic build.gradle
+plugins {
+    id 'java'
+}
