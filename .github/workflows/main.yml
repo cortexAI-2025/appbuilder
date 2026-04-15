@@ -1,0 +1,140 @@
+name: Build Android APK/AAB
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Format de sortie'
+        required: true
+        default: 'apk'
+        type: choice
+        options:
+          - apk
+          - aab
+      sign_release:
+        description: "Signer l'artifact (Release)"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build:
+    name: "Build Android"
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      ANDROID_HOME: ${{ github.workspace }}/android-sdk
+      OUTPUT_DIR:   ${{ github.workspace }}/build-output
+      WORK_DIR:     /tmp/android_build
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+          cache: "gradle"
+
+      - name: Cache Android SDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/android-sdk
+          key: android-sdk-34-${{ runner.os }}-v2
+          restore-keys: |
+            android-sdk-34-${{ runner.os }}-
+            android-sdk-${{ runner.os }}-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Prepare Project (Smart Detection & Normalization)
+        run: |
+          if [ ! -f "project.zip" ]; then
+            echo "project.zip not found! This workflow expects project.zip to be present in the root."
+            exit 1
+          fi
+
+          mkdir -p extraction_tmp
+          unzip -q project.zip -d extraction_tmp
+
+          echo "🔍 Recherche du projet Android légitime..."
+          # On liste tous les dossiers contenant un gradlew
+          CANDIDATES=$(find extraction_tmp -type f -name "gradlew" -exec dirname {} \;)
+          VALID_ROOT=""
+
+          for dir in $CANDIDATES; do
+            if [ -f "$dir/settings.gradle" ] || [ -f "$dir/settings.gradle.kts" ]; then
+              VALID_ROOT=$dir
+              break
+            fi
+          done
+
+          if [ -z "$VALID_ROOT" ]; then
+            echo "⚠️ Avertissement : Structure complexe non détectée, fallback sur le premier gradlew trouvé."
+            VALID_ROOT=$(find extraction_tmp -type f -name "gradlew" -exec dirname {} \; | head -n 1)
+          fi
+
+          if [ -z "$VALID_ROOT" ]; then
+            echo "❌ ERREUR : Aucun projet Android valide trouvé dans le ZIP."
+            ls -R extraction_tmp
+            exit 1
+          fi
+
+          echo "✅ Racine identifiée : $VALID_ROOT"
+          mkdir -p build_project
+          cp -r "$VALID_ROOT"/* build_project/
+          rm -rf extraction_tmp project.zip
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Run build pipeline
+        id: build_pipeline
+        run: |
+          mkdir -p "$OUTPUT_DIR"
+
+          KEYSTORE_PATH="${{ secrets.KEYSTORE_PATH || '' }}" \
+          KEYSTORE_ALIAS="${{ secrets.KEYSTORE_ALIAS || '' }}" \
+          KEYSTORE_PASS="${{ secrets.KEYSTORE_PASS || '' }}" \
+          KEY_PASS="${{ secrets.KEY_PASS || '' }}" \
+          bash scripts/build.sh "build_project" 2>&1 | tee "$OUTPUT_DIR/pipeline.log"
+
+          # Capture JSON result
+          python3 -c "
+          import sys, json, re
+          text = open('$OUTPUT_DIR/pipeline.log').read()
+          matches = re.findall(r'\{[^{}]*\"status\"[^{}]*\}', text, re.S)
+          if matches:
+              obj = json.loads(matches[-1])
+              print('BUILD_STATUS=' + obj.get('status','FAILED'))
+          else:
+              print('BUILD_STATUS=FAILED')
+          " >> $GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-build-result
+          path: |
+            ${{ env.OUTPUT_DIR }}/*.apk
+            ${{ env.OUTPUT_DIR }}/*.aab
+            ${{ env.OUTPUT_DIR }}/*.log
+          retention-days: 7
+
+      - name: Check build result
+        run: |
+          if [[ "${BUILD_STATUS}" == "FAILED" ]]; then
+            echo "Build FAILED — check logs for details."
+            exit 1
+          fi

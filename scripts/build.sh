@@ -160,6 +160,10 @@ run_build() {
 
     if [[ $apk_rc -ne 0 ]]; then
         ERRORS+=("assembleDebug failed (exit $apk_rc)")
+
+        log "Listing available Gradle tasks for debugging..."
+        $gradle_cmd tasks --all > "$OUTPUT_DIR/available_tasks.log" 2>&1 || true
+
         parse_gradle_errors "$OUTPUT_DIR/assembleDebug.log"
         apply_auto_fixes "$OUTPUT_DIR/assembleDebug.log"
 

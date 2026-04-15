@@ -78,27 +78,36 @@ _check_build_readiness() {
     local dir="$1"
     local missing=()
 
-    # settings.gradle / settings.gradle.kts
+    # 1. Handle settings.gradle
     if [[ ! -f "$dir/settings.gradle" && ! -f "$dir/settings.gradle.kts" ]]; then
-        missing+=("settings.gradle")
+        _ap_warn "settings.gradle missing! Creating a default one."
+        echo "rootProject.name = '$(basename "$dir")'" > "$dir/settings.gradle"
     fi
 
-    # gradlew (optional now as we have a standalone engine fallback)
+    # 2. Gradlew check
     if [[ ! -f "$dir/gradlew" ]]; then
         _ap_warn "gradlew not found — will use system Gradle engine."
     fi
 
-    # app module
+    # 3. App module detection & auto-include
+    local main_module="app"
     if [[ ! -d "$dir/app" ]]; then
-        _ap_warn "No 'app' module at root — scanning for module directories..."
-        local app_mod
-        app_mod=$(find "$dir" -maxdepth 3 -name "build.gradle" \
-                  | xargs -I{} dirname {} \
-                  | grep -v "^$dir$" | head -1 || true)
-        if [[ -z "$app_mod" ]]; then
-            missing+=("app module")
+        _ap_warn "No 'app' directory found. Searching for Android application module..."
+        local potential_app
+        potential_app=$(grep -r "com.android.application" "$dir" --include="*.gradle*" -l | head -1)
+        if [[ -n "$potential_app" ]]; then
+            main_module=$(basename "$(dirname "$potential_app")")
+            _ap_log "Detected application module: $main_module"
         else
-            _ap_warn "Using module: $app_mod"
+            missing+=("Android application module (plugin com.android.application)")
+        fi
+    fi
+
+    # 4. Ensure module is in settings.gradle
+    if [[ -f "$dir/settings.gradle" ]]; then
+        if ! grep -q "include .:$main_module." "$dir/settings.gradle" && [[ "$main_module" != "." ]]; then
+            _ap_warn "Module ':$main_module' not found in settings.gradle. Appending it."
+            echo "include ':$main_module'" >> "$dir/settings.gradle"
         fi
     fi
 
