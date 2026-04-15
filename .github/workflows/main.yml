@@ -24,15 +24,13 @@ jobs:
     steps:
       - name: Checkout du code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Configuration de Java 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'gradle'
+          # Cache désactivé pour éviter l'erreur de détection au démarrage
 
       - name: Preparation du Projet
         run: |
