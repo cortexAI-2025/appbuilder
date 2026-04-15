@@ -34,6 +34,114 @@ analyze_project() {
     _ap_log "Analysis complete. Project: $PROJECT_NAME | Type: $PROJECT_TYPE"
 }
 
+# ─── Scaffold a minimal Android WebView project ─────────────────────────────
+scaffold_android_project() {
+    local dir="$1"
+    _ap_warn "No Android project detected. Scaffolding a WebView wrapper from scratch..."
+
+    mkdir -p "$dir/app/src/main/java/com/example/webview"
+    mkdir -p "$dir/app/src/main/res/values"
+    mkdir -p "$dir/gradle/wrapper"
+
+    # 1. Root settings.gradle
+    echo "rootProject.name = 'ScaffoldedApp'" > "$dir/settings.gradle"
+    echo "include ':app'" >> "$dir/settings.gradle"
+
+    # 2. Root build.gradle
+    cat <<EOF > "$dir/build.gradle"
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.2.2'
+    }
+}
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+EOF
+
+    # 3. App build.gradle
+    cat <<EOF > "$dir/app/build.gradle"
+plugins {
+    id 'com.android.application'
+}
+android {
+    namespace 'com.example.webview'
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.example.webview"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+}
+EOF
+
+    # 4. AndroidManifest.xml
+    cat <<EOF > "$dir/app/src/main/AndroidManifest.xml"
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.microsoft.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application
+        android:label="WebView App"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+EOF
+
+    # 5. MainActivity.java
+    cat <<EOF > "$dir/app/src/main/java/com/example/webview/MainActivity.java"
+package com.example.webview;
+import android.app.Activity;
+import android.os.Bundle;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+
+public class MainActivity extends Activity {
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        WebView webView = new WebView(this);
+        webView.getSettings().setJavaScriptEnabled(true);
+        webView.setWebViewClient(new WebViewClient());
+        // Load the provided content or a default page
+        webView.loadUrl("https://github.com/cortexAI-2025/appbuilder");
+        setContentView(webView);
+    }
+}
+EOF
+
+    # 6. Inject gradlew from our repo if available
+    if [[ -f "./gradlew" ]]; then
+        cp ./gradlew "$dir/gradlew"
+        cp -r ./gradle "$dir/gradle"
+        chmod +x "$dir/gradlew"
+    fi
+
+    PROJECT_TYPE="ANDROID_NATIVE_JAVA"
+    _ap_log "Scaffolding complete."
+}
+
 # ─── Detect Android Native / Kotlin / Java ───────────────────────────────────
 _detect_project_type() {
     local dir="$1"
@@ -51,16 +159,7 @@ _detect_project_type() {
     fi
 
     if [[ "$PROJECT_TYPE" == "UNKNOWN" ]]; then
-        _ap_die "$(python3 - <<'EOF'
-import json
-print(json.dumps({
-  "status": "FAILED",
-  "apk": [], "aab": [],
-  "logs_summary": "Project is not build-ready",
-  "errors": ["No build.gradle or build.gradle.kts found — not an Android/Gradle project"]
-}, indent=2))
-EOF
-)"
+        scaffold_android_project "$dir"
     fi
 
     # Kotlin vs Java
@@ -78,27 +177,36 @@ _check_build_readiness() {
     local dir="$1"
     local missing=()
 
-    # settings.gradle / settings.gradle.kts
+    # 1. Handle settings.gradle
     if [[ ! -f "$dir/settings.gradle" && ! -f "$dir/settings.gradle.kts" ]]; then
-        missing+=("settings.gradle")
+        _ap_warn "settings.gradle missing! Creating a default one."
+        echo "rootProject.name = '$(basename "$dir")'" > "$dir/settings.gradle"
     fi
 
-    # gradlew (optional now as we have a standalone engine fallback)
+    # 2. Gradlew check
     if [[ ! -f "$dir/gradlew" ]]; then
         _ap_warn "gradlew not found — will use system Gradle engine."
     fi
 
-    # app module
+    # 3. App module detection & auto-include
+    local main_module="app"
     if [[ ! -d "$dir/app" ]]; then
-        _ap_warn "No 'app' module at root — scanning for module directories..."
-        local app_mod
-        app_mod=$(find "$dir" -maxdepth 3 -name "build.gradle" \
-                  | xargs -I{} dirname {} \
-                  | grep -v "^$dir$" | head -1 || true)
-        if [[ -z "$app_mod" ]]; then
-            missing+=("app module")
+        _ap_warn "No 'app' directory found. Searching for Android application module..."
+        local potential_app
+        potential_app=$(grep -r "com.android.application" "$dir" --include="*.gradle*" -l | head -1)
+        if [[ -n "$potential_app" ]]; then
+            main_module=$(basename "$(dirname "$potential_app")")
+            _ap_log "Detected application module: $main_module"
         else
-            _ap_warn "Using module: $app_mod"
+            missing+=("Android application module (plugin com.android.application)")
+        fi
+    fi
+
+    # 4. Ensure module is in settings.gradle
+    if [[ -f "$dir/settings.gradle" ]]; then
+        if ! grep -q "include .:$main_module." "$dir/settings.gradle" && [[ "$main_module" != "." ]]; then
+            _ap_warn "Module ':$main_module' not found in settings.gradle. Appending it."
+            echo "include ':$main_module'" >> "$dir/settings.gradle"
         fi
     fi
 
