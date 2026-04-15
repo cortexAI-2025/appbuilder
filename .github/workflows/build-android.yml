@@ -58,12 +58,43 @@ jobs:
           restore-keys: |
             gradle-${{ runner.os }}-
 
-      - name: Prepare project.zip
+      - name: Prepare Project (Smart Detection & Normalization)
         run: |
           if [ ! -f "project.zip" ]; then
             echo "project.zip not found! This workflow expects project.zip to be present in the root."
             exit 1
           fi
+
+          mkdir -p extraction_tmp
+          unzip -q project.zip -d extraction_tmp
+
+          echo "🔍 Recherche du projet Android légitime..."
+          # On liste tous les dossiers contenant un gradlew
+          CANDIDATES=$(find extraction_tmp -type f -name "gradlew" -exec dirname {} \;)
+          VALID_ROOT=""
+
+          for dir in $CANDIDATES; do
+            if [ -f "$dir/settings.gradle" ] || [ -f "$dir/settings.gradle.kts" ]; then
+              VALID_ROOT=$dir
+              break
+            fi
+          done
+
+          if [ -z "$VALID_ROOT" ]; then
+            echo "⚠️ Avertissement : Structure complexe non détectée, fallback sur le premier gradlew trouvé."
+            VALID_ROOT=$(find extraction_tmp -type f -name "gradlew" -exec dirname {} \; | head -n 1)
+          fi
+
+          if [ -z "$VALID_ROOT" ]; then
+            echo "❌ ERREUR : Aucun projet Android valide trouvé dans le ZIP."
+            ls -R extraction_tmp
+            exit 1
+          fi
+
+          echo "✅ Racine identifiée : $VALID_ROOT"
+          mkdir -p build_project
+          cp -r "$VALID_ROOT"/* build_project/
+          rm -rf extraction_tmp project.zip
 
       - name: Make scripts executable
         run: chmod +x scripts/*.sh
@@ -77,7 +108,7 @@ jobs:
           KEYSTORE_ALIAS="${{ secrets.KEYSTORE_ALIAS || '' }}" \
           KEYSTORE_PASS="${{ secrets.KEYSTORE_PASS || '' }}" \
           KEY_PASS="${{ secrets.KEY_PASS || '' }}" \
-          bash scripts/build.sh "project.zip" 2>&1 | tee "$OUTPUT_DIR/pipeline.log"
+          bash scripts/build.sh "build_project" 2>&1 | tee "$OUTPUT_DIR/pipeline.log"
 
           # Capture JSON result
           python3 -c "

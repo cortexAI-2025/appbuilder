@@ -72,8 +72,8 @@ EOF
 preflight() {
     log "Phase 0 — Pre-flight checks"
 
-    [[ -z "$ZIP_FILE" ]] && die "Usage: $0 <path-to-project.zip>"
-    [[ -f "$ZIP_FILE" ]] || die "ZIP not found: $ZIP_FILE"
+    [[ -z "$ZIP_FILE" ]] && die "Usage: $0 <path-to-project.zip or project-directory>"
+    [[ -e "$ZIP_FILE" ]] || die "Input not found: $ZIP_FILE"
 
     mkdir -p "$WORK_DIR" "$OUTPUT_DIR"
 
@@ -88,18 +88,23 @@ preflight() {
 # PHASE 1 — Extract & Analyse
 # =============================================================================
 extract_and_analyse() {
-    log "Phase 1 — Extracting archive: $ZIP_FILE"
-
-    rm -rf "$WORK_DIR"
-    mkdir -p "$WORK_DIR"
-    unzip -q "$ZIP_FILE" -d "$WORK_DIR"
-
-    # Flatten single-root directories (GitHub zips add a repo-name/ wrapper)
-    local entries=( "$WORK_DIR"/* )
-    if [[ ${#entries[@]} -eq 1 && -d "${entries[0]}" ]]; then
-        PROJECT_DIR="${entries[0]}"
+    if [[ -d "$ZIP_FILE" ]]; then
+        log "Phase 1 — Using directory: $ZIP_FILE"
+        PROJECT_DIR="$(cd "$ZIP_FILE" && pwd)"
     else
-        PROJECT_DIR="$WORK_DIR"
+        log "Phase 1 — Extracting archive: $ZIP_FILE"
+
+        rm -rf "$WORK_DIR"
+        mkdir -p "$WORK_DIR"
+        unzip -q "$ZIP_FILE" -d "$WORK_DIR"
+
+        # Flatten single-root directories (GitHub zips add a repo-name/ wrapper)
+        local entries=( "$WORK_DIR"/* )
+        if [[ ${#entries[@]} -eq 1 && -d "${entries[0]}" ]]; then
+            PROJECT_DIR="${entries[0]}"
+        else
+            PROJECT_DIR="$WORK_DIR"
+        fi
     fi
     log "Project root: $PROJECT_DIR"
 
