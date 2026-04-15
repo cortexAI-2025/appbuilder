@@ -12,6 +12,9 @@ on:
           - apk
           - aab
 
+permissions:
+  contents: write  # Crucial pour permettre l'enregistrement du fichier sur le repo
+
 jobs:
   build:
     name: "Compilation Android"
@@ -19,12 +22,8 @@ jobs:
     steps:
       - name: Checkout du code
         uses: actions/checkout@v4
-
-      - name: Debug - Liste des fichiers au depart
-        run: |
-          echo "Vérification de la racine du repo :"
-          ls -lh
-          file project.zip
+        with:
+          fetch-depth: 0
 
       - name: Configuration de Java 17
         uses: actions/setup-java@v4
@@ -34,23 +33,24 @@ jobs:
 
       - name: Preparation et Extraction
         run: |
-          mkdir -p extraction_tmp
-          unzip -o project.zip -d extraction_tmp
+          # 1. Gestion du ZIP si présent
+          if [ -f "project.zip" ]; then
+            mkdir -p extraction_tmp
+            unzip -o project.zip -d extraction_tmp
+            ROOT_DIR=$(find extraction_tmp -type f -name "gradlew" -exec dirname {} \; | head -n 1)
+            if [ -n "$ROOT_DIR" ]; then
+              cp -r "$ROOT_DIR"/* .
+              echo "✅ Projet extrait depuis le ZIP"
+            fi
+            rm -rf extraction_tmp
+          fi
           
-          echo "🔍 Contenu trouvé dans le ZIP :"
-          ls -R extraction_tmp
-          
-          # Recherche de la racine du projet
-          ROOT_DIR=$(find extraction_tmp -type f -name "gradlew" -exec dirname {} \; | head -n 1)
-          
-          if [ -n "$ROOT_DIR" ]; then
-            echo "✅ Racine détectée : $ROOT_DIR"
-            cp -r "$ROOT_DIR"/* .
-            chmod +x gradlew
-          else
-            echo "❌ ERREUR : Aucun fichier gradlew trouvé dans project.zip"
+          # 2. Vérification du moteur Gradle (WebView Shell)
+          if [ ! -f "gradlew" ]; then
+            echo "❌ Aucun gradlew trouvé. Jules doit ajouter le moteur Gradle au projet."
             exit 1
           fi
+          chmod +x gradlew
 
       - name: Build avec Gradle
         run: |
@@ -60,10 +60,38 @@ jobs:
             ./gradlew bundleRelease
           fi
 
-      - name: Exportation des Artifacts
+      - name: Enregistrement sur le Repo (Racine)
+        run: |
+          REPO_NAME=$(basename ${{ github.repository }})
+          EXTENSION="${{ github.event.inputs.build_type }}"
+          
+          # Identification du fichier généré
+          if [ "$EXTENSION" == "apk" ]; then
+            SOURCE_FILE=$(find . -name "*-debug.apk" | head -n 1)
+          else
+            SOURCE_FILE=$(find . -name "*-release.aab" | head -n 1)
+          fi
+          
+          if [ -f "$SOURCE_FILE" ]; then
+            # Renommage et déplacement à la racine
+            cp "$SOURCE_FILE" "./${REPO_NAME}.${EXTENSION}"
+            
+            # Commit et Push automatique
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git add "./${REPO_NAME}.${EXTENSION}"
+            git commit -m "🚀 Auto-build : Mise à jour de ${REPO_NAME}.${EXTENSION}"
+            git push origin HEAD:${{ github.ref }}
+            echo "✅ ${REPO_NAME}.${EXTENSION} a été enregistré à la racine."
+          else
+            echo "❌ Erreur : Artifact introuvable après le build."
+            exit 1
+          fi
+
+      - name: Exportation Artifact (GitHub UI)
         uses: actions/upload-artifact@v4
         with:
-          name: android-build-result
+          name: ${{ github.event.inputs.build_type }}-result
           path: |
-            **/build/outputs/apk/**/*.apk
-            **/build/outputs/bundle/**/*.aab
+            **/*.apk
+            **/*.aab
