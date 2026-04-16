@@ -16,8 +16,9 @@ die()  { echo -e "${RED}[FAIL]${RESET} $*" >&2; exit 1; }
 
 # ─── Defaults / overridable env ───────────────────────────────────────────────
 ZIP_FILE="${1:-}"
-WORK_DIR="${WORK_DIR:-/tmp/android_build}"
-OUTPUT_DIR="${OUTPUT_DIR:-/tmp/android_output}"
+BASE_DIR="$(pwd)/android_working_dir"
+WORK_DIR="${WORK_DIR:-$BASE_DIR/build}"
+OUTPUT_DIR="${OUTPUT_DIR:-$BASE_DIR/output}"
 KEYSTORE_PATH="${KEYSTORE_PATH:-}"
 KEYSTORE_ALIAS="${KEYSTORE_ALIAS:-}"
 KEYSTORE_PASS="${KEYSTORE_PASS:-}"
@@ -73,7 +74,6 @@ preflight() {
     log "Phase 0 — Pre-flight checks"
 
     [[ -z "$ZIP_FILE" ]] && die "Usage: $0 <path-to-project.zip or project-directory>"
-    [[ -e "$ZIP_FILE" ]] || die "Input not found: $ZIP_FILE"
 
     mkdir -p "$WORK_DIR" "$OUTPUT_DIR"
 
@@ -88,48 +88,48 @@ preflight() {
 # PHASE 1 — Extract & Analyse
 # =============================================================================
 extract_and_analyse() {
-    local extract_tmp="/tmp/android_extract"
+    local extract_tmp="$BASE_DIR/extract_tmp"
     rm -rf "$extract_tmp" "$WORK_DIR"
     mkdir -p "$extract_tmp" "$WORK_DIR"
 
-    if [[ -d "$ZIP_FILE" ]]; then
-        log "Phase 1 — Using directory: $ZIP_FILE"
-        # If the directory is not empty, copy its contents
-        if [[ -n "$(ls -A "$ZIP_FILE" 2>/dev/null)" ]]; then
-            cp -r "$ZIP_FILE"/* "$WORK_DIR/"
-        else
-            log "Directory $ZIP_FILE is empty. Scaffolding will be triggered."
+    if [[ -e "$ZIP_FILE" ]]; then
+        if [[ -d "$ZIP_FILE" ]]; then
+            log "Phase 1 — Using directory: $ZIP_FILE"
+            if [[ -n "$(ls -A "$ZIP_FILE" 2>/dev/null)" ]]; then
+                cp -r "$ZIP_FILE"/* "$WORK_DIR/"
+            fi
+        elif [[ -f "$ZIP_FILE" ]]; then
+            log "Phase 1 — Extracting archive: $ZIP_FILE"
+            unzip -q "$ZIP_FILE" -d "$extract_tmp"
+            local candidates
+            candidates=$(find "$extract_tmp" -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -exec dirname {} \; | sort -u)
+            local best_root=""
+            if [[ -n "$candidates" ]]; then
+                best_root=$(echo "$candidates" | head -n 1)
+                log "✅ Detected project root at: $best_root"
+            else
+                best_root="$extract_tmp"
+            fi
+            cp -r "$best_root"/* "$WORK_DIR/"
         fi
-    elif [[ -f "$ZIP_FILE" ]]; then
-        log "Phase 1 — Extracting archive: $ZIP_FILE"
-        unzip -q "$ZIP_FILE" -d "$extract_tmp"
-
-        log "🔍 Searching for valid Android project root..."
-        # Locate directories containing a build.gradle or settings.gradle
-        local candidates
-        candidates=$(find "$extract_tmp" -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -exec dirname {} \; | sort -u)
-
-        local best_root=""
-        if [[ -n "$candidates" ]]; then
-            best_root=$(echo "$candidates" | head -n 1)
-            log "✅ Detected project root at: $best_root"
-        else
-            best_root="$extract_tmp"
-            warn "No Gradle project structure found in archive."
-        fi
-
-        cp -r "$best_root"/* "$WORK_DIR/"
-        rm -rf "$extract_tmp"
     else
-        warn "ZIP_FILE is neither a directory nor a file: $ZIP_FILE. Proceeding to scaffolding."
+        warn "Input not found: $ZIP_FILE. Scaffolding will proceed."
     fi
 
+    rm -rf "$extract_tmp"
     PROJECT_DIR="$WORK_DIR"
     log "Final Project root: $PROJECT_DIR"
 
     log "Phase 1 — Analysing project structure & potential scaffolding"
     # shellcheck source=./analyze_project.sh
     source "$(dirname "$0")/analyze_project.sh"
+
+    # Forçage du Scaffolding : si le dossier app/src n'existe pas, lance scaffold_android_project
+    if [[ ! -d "$PROJECT_DIR/app/src" ]]; then
+        log "Force scaffolding: app/src not found in $PROJECT_DIR"
+        scaffold_android_project "$PROJECT_DIR"
+    fi
+
     analyze_project "$PROJECT_DIR"
 }
 
@@ -150,6 +150,8 @@ run_build() {
     log "Phase 3 — Starting build"
 
     cd "$PROJECT_DIR"
+    log "🔍 Debug: Final file structure before build..."
+    find . -maxdepth 3
     export PATH="$PROJECT_DIR:$PATH"
 
     # Determine Gradle command
