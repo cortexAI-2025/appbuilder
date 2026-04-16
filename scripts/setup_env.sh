@@ -58,8 +58,7 @@ _ensure_gradle() {
         return
     fi
 
-    local install_root="/opt/gradle"
-    [[ -w "/opt" ]] || install_root="${HOME}/gradle-engine"
+    local install_root="$(pwd)/android_working_dir/gradle-engine"
 
     if [[ -x "$install_root/gradle-${GRADLE_VERSION}/bin/gradle" ]]; then
         export PATH="$install_root/gradle-${GRADLE_VERSION}/bin:$PATH"
