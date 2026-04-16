@@ -210,7 +210,7 @@ run_build() {
 
 # ─── Collect outputs ──────────────────────────────────────────────────────────
 collect_apks() {
-    local proj_name; proj_name=$(basename "$(dirname "$0")/../.." 2>/dev/null || echo "app")
+    local proj_name; proj_name=$(basename "$PROJECT_DIR" 2>/dev/null || echo "app")
 
     while IFS= read -r -d '' apk; do
         local dest="$OUTPUT_DIR/$(basename "$apk")"

@@ -189,15 +189,10 @@ _detect_project_type() {
     local dir="$1"
     PROJECT_TYPE="UNKNOWN"
 
-    if [[ -f "$dir/build.gradle" || -f "$dir/build.gradle.kts" ]]; then
+    # Robust detection: Look for Android plugins in any .gradle(.kts) file
+    if find "$dir" -maxdepth 3 \( -name "build.gradle" -o -name "build.gradle.kts" \) \
+       -exec grep -E "com\.android\.(application|library)" {} + | grep -q .; then
         PROJECT_TYPE="ANDROID_NATIVE"
-    else
-        # Check subdirectories (monorepo / nested project layout)
-        if find "$dir" -maxdepth 3 \
-                \( -name "build.gradle" -o -name "build.gradle.kts" \) \
-                -print -quit 2>/dev/null | grep -q .; then
-            PROJECT_TYPE="ANDROID_NATIVE"
-        fi
     fi
 
     if [[ "$PROJECT_TYPE" == "UNKNOWN" ]]; then
@@ -232,12 +227,21 @@ _check_build_readiness() {
 
     # 3. App module detection & auto-include
     local main_module="app"
-    if [[ ! -d "$dir/app" ]]; then
-        _ap_warn "No 'app' directory found. Searching for Android application module..."
+    local found_app=false
+
+    if [[ -d "$dir/app" && ( -f "$dir/app/build.gradle" || -f "$dir/app/build.gradle.kts" ) ]]; then
+        if grep -q "com.android.application" "$dir/app/build.gradle"* 2>/dev/null; then
+            found_app=true
+        fi
+    fi
+
+    if [[ "$found_app" == "false" ]]; then
+        _ap_warn "No 'app' module found or it's not an Android application. Searching..."
         local potential_app
         potential_app=$(grep -r "com.android.application" "$dir" --include="*.gradle*" -l | head -1)
         if [[ -n "$potential_app" ]]; then
             main_module=$(basename "$(dirname "$potential_app")")
+            found_app=true
             _ap_log "Detected application module: $main_module"
         else
             missing+=("Android application module (plugin com.android.application)")
