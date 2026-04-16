@@ -37,66 +37,101 @@ analyze_project() {
 # ─── Scaffold a minimal Android WebView project ─────────────────────────────
 scaffold_android_project() {
     local dir="$1"
-    _ap_warn "No Android project detected. Scaffolding a WebView wrapper from scratch..."
+    _ap_warn "No Android project detected. Scaffolding a Manus-style WebView wrapper (Kotlin + KTS)..."
 
-    mkdir -p "$dir/app/src/main/java/com/example/webview"
+    local pkg_path="com/example/webviewapp"
+    mkdir -p "$dir/app/src/main/kotlin/$pkg_path"
     mkdir -p "$dir/app/src/main/res/values"
     mkdir -p "$dir/gradle/wrapper"
 
-    # 1. Root settings.gradle
-    echo "rootProject.name = 'ScaffoldedApp'" > "$dir/settings.gradle"
-    echo "include ':app'" >> "$dir/settings.gradle"
-
-    # 2. Root build.gradle
-    cat <<EOF > "$dir/build.gradle"
-buildscript {
+    # 1. settings.gradle.kts
+    cat <<EOF > "$dir/settings.gradle.kts"
+pluginManagement {
     repositories {
         google()
         mavenCentral()
-    }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:8.2.2'
+        gradlePluginPortal()
     }
 }
-allprojects {
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
         mavenCentral()
     }
+}
+rootProject.name = "ManusApp"
+include(":app")
+EOF
+
+    # 2. build.gradle.kts (Root)
+    cat <<EOF > "$dir/build.gradle.kts"
+plugins {
+    id("com.android.application") version "8.2.2" apply false
+    id("org.jetbrains.kotlin.android") version "1.9.22" apply false
 }
 EOF
 
-    # 3. App build.gradle
-    cat <<EOF > "$dir/app/build.gradle"
+    # 3. app/build.gradle.kts
+    cat <<EOF > "$dir/app/build.gradle.kts"
 plugins {
-    id 'com.android.application'
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
 }
+
 android {
-    namespace 'com.example.webview'
-    compileSdk 34
+    namespace = "com.example.webviewapp"
+    compileSdk = 34
+
     defaultConfig {
-        applicationId "com.example.webview"
-        minSdk 21
-        targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        applicationId = "com.example.webviewapp"
+        minSdk = 24
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0"
     }
+
     buildTypes {
         release {
-            minifyEnabled false
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = "1.8"
+    }
+}
+
+dependencies {
+    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("com.google.android.material:material:1.11.0")
 }
 EOF
 
-    # 4. AndroidManifest.xml
+    # 4. gradle.properties
+    cat <<EOF > "$dir/gradle.properties"
+android.useAndroidX=true
+android.nonTransitiveRClass=true
+kotlin.code.style=official
+EOF
+
+    # 5. AndroidManifest.xml
     cat <<EOF > "$dir/app/src/main/AndroidManifest.xml"
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.microsoft.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:label="WebView App"
-        android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+        android:allowBackup="true"
+        android:icon="@android:mipmap/ic_launcher"
+        android:label="Manus WebView"
+        android:roundIcon="@android:mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.AppCompat.Light.NoActionBar">
         <activity
             android:name=".MainActivity"
             android:exported="true">
@@ -109,37 +144,44 @@ EOF
 </manifest>
 EOF
 
-    # 5. MainActivity.java
-    cat <<EOF > "$dir/app/src/main/java/com/example/webview/MainActivity.java"
-package com.example.webview;
-import android.app.Activity;
-import android.os.Bundle;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
+    # 6. res/values/themes.xml (Minimal)
+    mkdir -p "$dir/app/src/main/res/values"
+    cat <<EOF > "$dir/app/src/main/res/values/themes.xml"
+<resources>
+    <style name="Theme.ManusApp" parent="Theme.MaterialComponents.DayNight.DarkActionBar" />
+</resources>
+EOF
 
-public class MainActivity extends Activity {
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        WebView webView = new WebView(this);
-        webView.getSettings().setJavaScriptEnabled(true);
-        webView.setWebViewClient(new WebViewClient());
-        // Load the provided content or a default page
-        webView.loadUrl("https://github.com/cortexAI-2025/appbuilder");
-        setContentView(webView);
+    # 7. MainActivity.kt
+    cat <<EOF > "$dir/app/src/main/kotlin/$pkg_path/MainActivity.kt"
+package com.example.webviewapp
+
+import android.os.Bundle
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.appcompat.app.AppCompatActivity
+
+class MainActivity : AppCompatActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val webView = WebView(this)
+        webView.settings.javaScriptEnabled = true
+        webView.webViewClient = WebViewClient()
+        webView.loadUrl("https://github.com/cortexAI-2025/appbuilder")
+        setContentView(webView)
     }
 }
 EOF
 
-    # 6. Inject gradlew from our repo if available
+    # 8. Inject gradlew from our repo if available
     if [[ -f "./gradlew" ]]; then
         cp ./gradlew "$dir/gradlew"
         cp -r ./gradle "$dir/gradle"
         chmod +x "$dir/gradlew"
     fi
 
-    PROJECT_TYPE="ANDROID_NATIVE_JAVA"
-    _ap_log "Scaffolding complete."
+    PROJECT_TYPE="ANDROID_NATIVE_KOTLIN"
+    _ap_log "Manus-style scaffolding complete."
 }
 
 # ─── Detect Android Native / Kotlin / Java ───────────────────────────────────
@@ -147,15 +189,10 @@ _detect_project_type() {
     local dir="$1"
     PROJECT_TYPE="UNKNOWN"
 
-    if [[ -f "$dir/build.gradle" || -f "$dir/build.gradle.kts" ]]; then
+    # Robust detection: Look for Android plugins in any .gradle(.kts) file
+    if find "$dir" -maxdepth 3 \( -name "build.gradle" -o -name "build.gradle.kts" \) \
+       -exec grep -E "com\.android\.(application|library)" {} + | grep -q .; then
         PROJECT_TYPE="ANDROID_NATIVE"
-    else
-        # Check subdirectories (monorepo / nested project layout)
-        if find "$dir" -maxdepth 3 \
-                \( -name "build.gradle" -o -name "build.gradle.kts" \) \
-                -print -quit 2>/dev/null | grep -q .; then
-            PROJECT_TYPE="ANDROID_NATIVE"
-        fi
     fi
 
     if [[ "$PROJECT_TYPE" == "UNKNOWN" ]]; then
@@ -190,12 +227,21 @@ _check_build_readiness() {
 
     # 3. App module detection & auto-include
     local main_module="app"
-    if [[ ! -d "$dir/app" ]]; then
-        _ap_warn "No 'app' directory found. Searching for Android application module..."
+    local found_app=false
+
+    if [[ -d "$dir/app" && ( -f "$dir/app/build.gradle" || -f "$dir/app/build.gradle.kts" ) ]]; then
+        if grep -q "com.android.application" "$dir/app/build.gradle"* 2>/dev/null; then
+            found_app=true
+        fi
+    fi
+
+    if [[ "$found_app" == "false" ]]; then
+        _ap_warn "No 'app' module found or it's not an Android application. Searching..."
         local potential_app
         potential_app=$(grep -r "com.android.application" "$dir" --include="*.gradle*" -l | head -1)
         if [[ -n "$potential_app" ]]; then
             main_module=$(basename "$(dirname "$potential_app")")
+            found_app=true
             _ap_log "Detected application module: $main_module"
         else
             missing+=("Android application module (plugin com.android.application)")

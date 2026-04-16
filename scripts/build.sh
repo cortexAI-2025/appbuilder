@@ -88,27 +88,39 @@ preflight() {
 # PHASE 1 — Extract & Analyse
 # =============================================================================
 extract_and_analyse() {
+    local extract_tmp="/tmp/android_extract"
+    rm -rf "$extract_tmp" "$WORK_DIR"
+    mkdir -p "$extract_tmp" "$WORK_DIR"
+
     if [[ -d "$ZIP_FILE" ]]; then
         log "Phase 1 — Using directory: $ZIP_FILE"
-        PROJECT_DIR="$(cd "$ZIP_FILE" && pwd)"
+        cp -r "$ZIP_FILE"/* "$WORK_DIR/"
     else
         log "Phase 1 — Extracting archive: $ZIP_FILE"
+        unzip -q "$ZIP_FILE" -d "$extract_tmp"
 
-        rm -rf "$WORK_DIR"
-        mkdir -p "$WORK_DIR"
-        unzip -q "$ZIP_FILE" -d "$WORK_DIR"
+        log "🔍 Searching for valid Android project root..."
+        # Locate directories containing a build.gradle or settings.gradle
+        local candidates
+        candidates=$(find "$extract_tmp" -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -exec dirname {} \; | sort -u)
 
-        # Flatten single-root directories (GitHub zips add a repo-name/ wrapper)
-        local entries=( "$WORK_DIR"/* )
-        if [[ ${#entries[@]} -eq 1 && -d "${entries[0]}" ]]; then
-            PROJECT_DIR="${entries[0]}"
+        local best_root=""
+        if [[ -n "$candidates" ]]; then
+            best_root=$(echo "$candidates" | head -n 1)
+            log "✅ Detected project root at: $best_root"
         else
-            PROJECT_DIR="$WORK_DIR"
+            best_root="$extract_tmp"
+            warn "No Gradle project structure found in archive."
         fi
-    fi
-    log "Project root: $PROJECT_DIR"
 
-    log "Phase 1 — Analysing project structure"
+        cp -r "$best_root"/* "$WORK_DIR/"
+        rm -rf "$extract_tmp"
+    fi
+
+    PROJECT_DIR="$WORK_DIR"
+    log "Final Project root: $PROJECT_DIR"
+
+    log "Phase 1 — Analysing project structure & potential scaffolding"
     # shellcheck source=./analyze_project.sh
     source "$(dirname "$0")/analyze_project.sh"
     analyze_project "$PROJECT_DIR"
@@ -131,6 +143,7 @@ run_build() {
     log "Phase 3 — Starting build"
 
     cd "$PROJECT_DIR"
+    export PATH="$PROJECT_DIR:$PATH"
 
     # Determine Gradle command
     local gradle_cmd="./gradlew"
@@ -139,6 +152,7 @@ run_build() {
         gradle_cmd="gradle"
     else
         chmod +x gradlew
+        gradle_cmd="./gradlew"
     fi
 
     # ── Clean ──────────────────────────────────────────────────────────────────
@@ -196,7 +210,7 @@ run_build() {
 
 # ─── Collect outputs ──────────────────────────────────────────────────────────
 collect_apks() {
-    local proj_name; proj_name=$(basename "$(dirname "$0")/../.." 2>/dev/null || echo "app")
+    local proj_name; proj_name=$(basename "$PROJECT_DIR" 2>/dev/null || echo "app")
 
     while IFS= read -r -d '' apk; do
         local dest="$OUTPUT_DIR/$(basename "$apk")"
