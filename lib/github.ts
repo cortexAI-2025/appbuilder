@@ -63,7 +63,7 @@ export const uploadProjectZip = async (settings: GithubSettings, file: File) => 
   }
 };
 
-export const triggerWorkflow = async (settings: GithubSettings, buildType: 'apk' | 'aab', signRelease: boolean = false) => {
+export const triggerWorkflow = async (settings: GithubSettings, buildType: 'apk' | 'aab', signRelease: boolean = false, repoUrl?: string) => {
   const octokit = new Octokit({ auth: settings.token });
   try {
     const { data: repoData } = await octokit.rest.repos.get({
@@ -79,6 +79,7 @@ export const triggerWorkflow = async (settings: GithubSettings, buildType: 'apk'
       inputs: {
         build_type: buildType,
         sign_release: String(signRelease),
+        repo_url: repoUrl || "",
       },
     });
     return { success: true };

@@ -16,6 +16,11 @@ on:
         required: false
         default: false
         type: boolean
+      repo_url:
+        description: 'URL du Repository GitHub'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   build:
@@ -61,18 +66,6 @@ jobs:
       - name: Make scripts executable
         run: chmod +x scripts/*.sh
 
-      - name: Prepare Project
-        id: prepare_project
-        run: |
-          if [ ! -f "project.zip" ]; then
-            echo "Aucun projet trouvé, lancement du scaffolding"
-            mkdir -p empty_project
-            touch empty_project/.gitkeep
-            echo "PROJECT_INPUT=empty_project" >> $GITHUB_ENV
-          else
-            echo "PROJECT_INPUT=project.zip" >> $GITHUB_ENV
-          fi
-
       - name: Run build pipeline
         id: build_pipeline
         run: |
@@ -82,7 +75,7 @@ jobs:
           KEYSTORE_ALIAS="${{ secrets.KEYSTORE_ALIAS || '' }}" \
           KEYSTORE_PASS="${{ secrets.KEYSTORE_PASS || '' }}" \
           KEY_PASS="${{ secrets.KEY_PASS || '' }}" \
-          bash scripts/build.sh "$PROJECT_INPUT" 2>&1 | tee "$OUTPUT_DIR/pipeline.log"
+          bash scripts/build.sh "${{ github.event.inputs.repo_url }}" 2>&1 | tee "$OUTPUT_DIR/pipeline.log"
 
           # Capture JSON result
           python3 -c "

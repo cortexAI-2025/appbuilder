@@ -2,33 +2,25 @@
 
 import { useState } from "react";
 import GithubConfig from "@/components/GithubConfig";
-import FileUploader from "@/components/FileUploader";
 import BuildStatus from "@/components/BuildStatus";
-import { GithubSettings, uploadProjectZip, triggerWorkflow } from "@/lib/github";
-import { Box, Smartphone, Loader2, Rocket, AlertCircle } from "lucide-react";
+import { GithubSettings, triggerWorkflow } from "@/lib/github";
+import { Box, Smartphone, Loader2, Rocket, AlertCircle, Github } from "lucide-react";
 
 export default function Home() {
   const [settings, setSettings] = useState<GithubSettings | null>(null);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [repoUrl, setRepoUrl] = useState<string>("");
   const [isUploading, setIsUploading] = useState(false);
   const [isBuilding, setIsBuilding] = useState(false);
   const [signRelease, setSignRelease] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleStartBuild = async (type: "apk" | "aab") => {
-    if (!settings || !selectedFile) return;
+    if (!settings) return;
 
     setError(null);
     setIsUploading(true);
 
-    const uploadResult = await uploadProjectZip(settings, selectedFile);
-    if (!uploadResult.success) {
-      setError(`Erreur lors de l'upload: ${uploadResult.error}`);
-      setIsUploading(false);
-      return;
-    }
-
-    const triggerResult = await triggerWorkflow(settings, type, signRelease);
+    const triggerResult = await triggerWorkflow(settings, type, signRelease, repoUrl);
     if (!triggerResult.success) {
       setError(`Erreur lors du déclenchement du workflow: ${triggerResult.error}`);
       setIsUploading(false);
@@ -57,7 +49,28 @@ export default function Home() {
         <div className={`space-y-6 ${!settings ? "opacity-50 pointer-events-none" : ""}`}>
           <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
             <h2 className="text-xl font-semibold mb-4">Projet Android</h2>
-            <FileUploader onFileSelect={setSelectedFile} disabled={isUploading || isBuilding} />
+
+            <div className="space-y-4 mb-6">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                URL du Repository GitHub (optionnel pour scaffolding)
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Github className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="text"
+                  value={repoUrl}
+                  onChange={(e) => setRepoUrl(e.target.value)}
+                  placeholder="https://github.com/utilisateur/mon-projet-android"
+                  disabled={isUploading || isBuilding}
+                  className="block w-full pl-10 pr-3 py-3 border border-gray-300 dark:border-gray-600 rounded-xl leading-5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-all"
+                />
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Laissez vide pour générer une application WebView pointant vers ce repo.
+              </p>
+            </div>
 
             <div className="mt-4 flex items-center gap-2">
               <input
@@ -76,7 +89,7 @@ export default function Home() {
             <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
               <button
                 onClick={() => handleStartBuild("apk")}
-                disabled={!selectedFile || isUploading || isBuilding}
+                disabled={isUploading || isBuilding}
                 className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-all disabled:opacity-50 shadow-lg shadow-blue-500/20"
               >
                 {isUploading ? (
@@ -88,7 +101,7 @@ export default function Home() {
               </button>
               <button
                 onClick={() => handleStartBuild("aab")}
-                disabled={!selectedFile || isUploading || isBuilding}
+                disabled={isUploading || isBuilding}
                 className="flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-xl transition-all disabled:opacity-50 shadow-lg shadow-indigo-500/20"
               >
                 {isUploading ? (
