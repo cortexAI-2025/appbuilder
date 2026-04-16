@@ -15,7 +15,7 @@ warn() { echo -e "${YELLOW}[WARN]${RESET} $*"; }
 die()  { echo -e "${RED}[FAIL]${RESET} $*" >&2; exit 1; }
 
 # ─── Defaults / overridable env ───────────────────────────────────────────────
-ZIP_FILE="${1:-}"
+REPO_URL="${1:-}"
 BASE_DIR="$(pwd)/android_working_dir"
 WORK_DIR="${WORK_DIR:-$BASE_DIR/build}"
 OUTPUT_DIR="${OUTPUT_DIR:-$BASE_DIR/output}"
@@ -61,7 +61,7 @@ data = {
     "logs_summary": "$LOGS_SUMMARY",
     "errors":       $err_json,
     "build_duration_seconds": $duration,
-    "project_name": "$(basename "${ZIP_FILE:-unknown}" .zip)"
+    "project_name": "$(basename "${REPO_URL:-ManusApp}" .git)"
 }
 print(json.dumps(data, indent=2))
 EOF
@@ -73,11 +73,11 @@ EOF
 preflight() {
     log "Phase 0 — Pre-flight checks"
 
-    [[ -z "$ZIP_FILE" ]] && die "Usage: $0 <path-to-project.zip or project-directory>"
+    # REPO_URL is now optional (scaffolding fallback)
 
     mkdir -p "$WORK_DIR" "$OUTPUT_DIR"
 
-    for cmd in unzip java python3; do
+    for cmd in git java python3; do
         command -v "$cmd" &>/dev/null || die "Required tool missing: $cmd"
     done
 
@@ -88,35 +88,20 @@ preflight() {
 # PHASE 1 — Extract & Analyse
 # =============================================================================
 extract_and_analyse() {
-    local extract_tmp="$BASE_DIR/extract_tmp"
-    rm -rf "$extract_tmp" "$WORK_DIR"
-    mkdir -p "$extract_tmp" "$WORK_DIR"
+    rm -rf "$WORK_DIR"
+    mkdir -p "$WORK_DIR"
 
-    if [[ -e "$ZIP_FILE" ]]; then
-        if [[ -d "$ZIP_FILE" ]]; then
-            log "Phase 1 — Using directory: $ZIP_FILE"
-            if [[ -n "$(ls -A "$ZIP_FILE" 2>/dev/null)" ]]; then
-                cp -r "$ZIP_FILE"/* "$WORK_DIR/"
-            fi
-        elif [[ -f "$ZIP_FILE" ]]; then
-            log "Phase 1 — Extracting archive: $ZIP_FILE"
-            unzip -q "$ZIP_FILE" -d "$extract_tmp"
-            local candidates
-            candidates=$(find "$extract_tmp" -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -exec dirname {} \; | sort -u)
-            local best_root=""
-            if [[ -n "$candidates" ]]; then
-                best_root=$(echo "$candidates" | head -n 1)
-                log "✅ Detected project root at: $best_root"
-            else
-                best_root="$extract_tmp"
-            fi
-            cp -r "$best_root"/* "$WORK_DIR/"
+    if [[ -n "$REPO_URL" ]]; then
+        log "Phase 1 — Cloning repository: $REPO_URL"
+        if git clone --depth 1 "$REPO_URL" "$WORK_DIR"; then
+            ok "Successfully cloned repository."
+        else
+            warn "Failed to clone repository. Scaffolding will proceed."
         fi
     else
-        warn "Input not found: $ZIP_FILE. Scaffolding will proceed."
+        log "Phase 1 — No Repository URL provided. Scaffolding will proceed."
     fi
 
-    rm -rf "$extract_tmp"
     PROJECT_DIR="$WORK_DIR"
     log "Final Project root: $PROJECT_DIR"
 
@@ -220,9 +205,12 @@ run_build() {
 # ─── Collect outputs ──────────────────────────────────────────────────────────
 collect_apks() {
     local proj_name; proj_name=$(basename "$PROJECT_DIR" 2>/dev/null || echo "app")
+    [[ "$proj_name" == "build" ]] && proj_name="ManusApp"
 
     while IFS= read -r -d '' apk; do
-        local dest="$OUTPUT_DIR/$(basename "$apk")"
+        local ext="${apk##*.}"
+        local filename=$(basename "$apk")
+        local dest="$OUTPUT_DIR/${proj_name}-${filename}"
         cp "$apk" "$dest"
         local size; size=$(du -sh "$dest" | cut -f1)
         APK_PATHS+=("$dest")
@@ -233,8 +221,12 @@ collect_apks() {
 }
 
 collect_aabs() {
+    local proj_name; proj_name=$(basename "$PROJECT_DIR" 2>/dev/null || echo "app")
+    [[ "$proj_name" == "build" ]] && proj_name="ManusApp"
+
     while IFS= read -r -d '' aab; do
-        local dest="$OUTPUT_DIR/$(basename "$aab")"
+        local filename=$(basename "$aab")
+        local dest="$OUTPUT_DIR/${proj_name}-${filename}"
         cp "$aab" "$dest"
         local size; size=$(du -sh "$dest" | cut -f1)
         AAB_PATHS+=("$dest")
