@@ -26,7 +26,7 @@ jobs:
     env:
       ANDROID_HOME: ${{ github.workspace }}/android-sdk
       OUTPUT_DIR:   ${{ github.workspace }}/build-output
-      WORK_DIR:     /tmp/android_build
+      WORK_DIR:     ${{ github.workspace }}/android_working_dir
 
     steps:
       - name: Checkout Repository

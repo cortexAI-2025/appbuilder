@@ -16,8 +16,8 @@ die()  { echo -e "${RED}[FAIL]${RESET} $*" >&2; exit 1; }
 
 # ─── Defaults / overridable env ───────────────────────────────────────────────
 ZIP_FILE="${1:-}"
-WORK_DIR="${WORK_DIR:-/tmp/android_build}"
-OUTPUT_DIR="${OUTPUT_DIR:-/tmp/android_output}"
+WORK_DIR="${WORK_DIR:-$(pwd)/android_working_dir}"
+OUTPUT_DIR="${OUTPUT_DIR:-$(pwd)/android_output}"
 KEYSTORE_PATH="${KEYSTORE_PATH:-}"
 KEYSTORE_ALIAS="${KEYSTORE_ALIAS:-}"
 KEYSTORE_PASS="${KEYSTORE_PASS:-}"
@@ -98,7 +98,7 @@ extract_and_analyse() {
         if [[ -n "$(ls -A "$ZIP_FILE" 2>/dev/null)" ]]; then
             cp -r "$ZIP_FILE"/* "$WORK_DIR/"
         else
-            log "Directory $ZIP_FILE is empty. Scaffolding will be triggered."
+            log "Directory $ZIP_FILE is empty."
         fi
     elif [[ -f "$ZIP_FILE" ]]; then
         log "Phase 1 — Extracting archive: $ZIP_FILE"
@@ -121,7 +121,7 @@ extract_and_analyse() {
         cp -r "$best_root"/* "$WORK_DIR/"
         rm -rf "$extract_tmp"
     else
-        warn "ZIP_FILE is neither a directory nor a file: $ZIP_FILE. Proceeding to scaffolding."
+        warn "ZIP_FILE is neither a directory nor a file: $ZIP_FILE."
     fi
 
     PROJECT_DIR="$WORK_DIR"
@@ -130,6 +130,13 @@ extract_and_analyse() {
     log "Phase 1 — Analysing project structure & potential scaffolding"
     # shellcheck source=./analyze_project.sh
     source "$(dirname "$0")/analyze_project.sh"
+
+    # Forçage du Scaffolding : si le dossier app/src n'existe pas, lance scaffold_android_project
+    if [[ ! -d "$PROJECT_DIR/app/src" ]]; then
+        log "Force scaffolding: app/src not found in $PROJECT_DIR"
+        scaffold_android_project "$PROJECT_DIR"
+    fi
+
     analyze_project "$PROJECT_DIR"
 }
 
@@ -150,6 +157,8 @@ run_build() {
     log "Phase 3 — Starting build"
 
     cd "$PROJECT_DIR"
+    log "🔍 Debug: Final file structure before build..."
+    find . -maxdepth 3
     export PATH="$PROJECT_DIR:$PATH"
 
     # Determine Gradle command
