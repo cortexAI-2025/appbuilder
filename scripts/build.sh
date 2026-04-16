@@ -94,8 +94,13 @@ extract_and_analyse() {
 
     if [[ -d "$ZIP_FILE" ]]; then
         log "Phase 1 — Using directory: $ZIP_FILE"
-        cp -r "$ZIP_FILE"/* "$WORK_DIR/"
-    else
+        # If the directory is not empty, copy its contents
+        if [[ -n "$(ls -A "$ZIP_FILE" 2>/dev/null)" ]]; then
+            cp -r "$ZIP_FILE"/* "$WORK_DIR/"
+        else
+            log "Directory $ZIP_FILE is empty. Scaffolding will be triggered."
+        fi
+    elif [[ -f "$ZIP_FILE" ]]; then
         log "Phase 1 — Extracting archive: $ZIP_FILE"
         unzip -q "$ZIP_FILE" -d "$extract_tmp"
 
@@ -115,6 +120,8 @@ extract_and_analyse() {
 
         cp -r "$best_root"/* "$WORK_DIR/"
         rm -rf "$extract_tmp"
+    else
+        warn "ZIP_FILE is neither a directory nor a file: $ZIP_FILE. Proceeding to scaffolding."
     fi
 
     PROJECT_DIR="$WORK_DIR"
@@ -320,6 +327,9 @@ finalise() {
 # MAIN
 # =============================================================================
 main() {
+    log "🔍 Debug: Listing files in current directory..."
+    ls -R . | head -n 100
+
     preflight
     extract_and_analyse
     setup_environment
