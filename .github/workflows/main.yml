@@ -61,18 +61,21 @@ jobs:
       - name: Make scripts executable
         run: chmod +x scripts/*.sh
 
+      - name: Prepare Project
+        id: prepare_project
+        run: |
+          if [ ! -f "project.zip" ]; then
+            echo "Aucun projet trouvé, lancement du scaffolding"
+            mkdir -p empty_project
+            touch empty_project/.gitkeep
+            echo "PROJECT_INPUT=empty_project" >> $GITHUB_ENV
+          else
+            echo "PROJECT_INPUT=project.zip" >> $GITHUB_ENV
+          fi
+
       - name: Run build pipeline
         id: build_pipeline
         run: |
-          if [ ! -f "project.zip" ]; then
-            echo "project.zip not found! Scaffolding mode enabled."
-            mkdir -p empty_project
-            touch empty_project/.gitkeep
-            PROJECT_INPUT="empty_project"
-          else
-            PROJECT_INPUT="project.zip"
-          fi
-
           mkdir -p "$OUTPUT_DIR"
 
           KEYSTORE_PATH="${{ secrets.KEYSTORE_PATH || '' }}" \

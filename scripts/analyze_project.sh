@@ -249,10 +249,18 @@ _check_build_readiness() {
     fi
 
     # 4. Ensure module is in settings.gradle
-    if [[ -f "$dir/settings.gradle" ]]; then
-        if ! grep -q "include .:$main_module." "$dir/settings.gradle" && [[ "$main_module" != "." ]]; then
-            _ap_warn "Module ':$main_module' not found in settings.gradle. Appending it."
-            echo "include ':$main_module'" >> "$dir/settings.gradle"
+    local settings_file=""
+    [[ -f "$dir/settings.gradle" ]] && settings_file="$dir/settings.gradle"
+    [[ -f "$dir/settings.gradle.kts" ]] && settings_file="$dir/settings.gradle.kts"
+
+    if [[ -n "$settings_file" ]]; then
+        if ! grep -q "include .:$main_module." "$settings_file" && [[ "$main_module" != "." ]]; then
+            _ap_warn "Module ':$main_module' not found in $(basename "$settings_file"). Appending it."
+            if [[ "$settings_file" == *.kts ]]; then
+                echo "include(\":$main_module\")" >> "$settings_file"
+            else
+                echo "include ':$main_module'" >> "$settings_file"
+            fi
         fi
     fi
 
@@ -279,9 +287,9 @@ _extract_metadata() {
     PROJECT_DIR="$dir"
     PROJECT_NAME="$(basename "$dir")"
 
-    # Try to read applicationId from build.gradle
-    local app_gradle="$dir/app/build.gradle"
-    [[ ! -f "$app_gradle" ]] && app_gradle=$(find "$dir" -maxdepth 4 -name "build.gradle" \
+    # Try to read applicationId from build.gradle or build.gradle.kts
+    local app_gradle
+    app_gradle=$(find "$dir" -maxdepth 4 \( -name "build.gradle" -o -name "build.gradle.kts" \) \
         | xargs grep -l "applicationId" 2>/dev/null | head -1 || true)
 
     if [[ -n "$app_gradle" && -f "$app_gradle" ]]; then
@@ -328,12 +336,15 @@ _validate_gradle_wrapper() {
 # ─── Resolve SDK versions from build.gradle ──────────────────────────────────
 _resolve_sdk_versions() {
     local dir="$1"
-    local app_gradle="$dir/app/build.gradle"
+    local app_gradle
+    app_gradle=$(find "$dir" -maxdepth 4 \( -name "build.gradle" -o -name "build.gradle.kts" \) \
+        | xargs grep -lE "(compileSdk|minSdk|targetSdk)" 2>/dev/null | head -1 || true)
+
     [[ ! -f "$app_gradle" ]] && return
 
-    COMPILE_SDK=$(grep -oP 'compileSdk(Version)?\s+\K\d+' "$app_gradle" | head -1 || echo "34")
-    MIN_SDK=$(grep -oP 'minSdk(Version)?\s+\K\d+' "$app_gradle" | head -1 || echo "21")
-    TARGET_SDK=$(grep -oP 'targetSdk(Version)?\s+\K\d+' "$app_gradle" | head -1 || echo "34")
+    COMPILE_SDK=$(grep -oP 'compileSdk(Version)?\s*(=|\s+)\s*\K\d+' "$app_gradle" | head -1 || echo "34")
+    MIN_SDK=$(grep -oP 'minSdk(Version)?\s*(=|\s+)\s*\K\d+' "$app_gradle" | head -1 || echo "21")
+    TARGET_SDK=$(grep -oP 'targetSdk(Version)?\s*(=|\s+)\s*\K\d+' "$app_gradle" | head -1 || echo "34")
 
     export COMPILE_SDK MIN_SDK TARGET_SDK
     _ap_log "compileSdk=$COMPILE_SDK  minSdk=$MIN_SDK  targetSdk=$TARGET_SDK"
