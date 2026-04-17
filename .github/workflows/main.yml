@@ -83,29 +83,43 @@ jobs:
           KEYSTORE_ALIAS="${{ secrets.KEYSTORE_ALIAS || '' }}" \
           KEYSTORE_PASS="${{ secrets.KEYSTORE_PASS || '' }}" \
           KEY_PASS="${{ secrets.KEY_PASS || '' }}" \
-          bash scripts/build.sh "${{ github.event.inputs.repo_url }}" 2>&1 | tee "$OUTPUT_DIR/pipeline.log"
+          bash scripts/build.sh "${{ github.event.inputs.repo_url }}" 2>&1 | tee "$OUTPUT_DIR/pipeline.log" || true
 
           # Capture JSON result
           python3 -c "
-          import sys, json, re
-          text = open('$OUTPUT_DIR/pipeline.log').read()
+          import sys, json, re, os
+          log_path = os.path.join(os.environ['OUTPUT_DIR'], 'pipeline.log')
+          if not os.path.exists(log_path):
+              print('BUILD_STATUS=FAILED')
+              sys.exit(0)
+          text = open(log_path).read()
           matches = re.findall(r'\{[^{}]*\"status\"[^{}]*\}', text, re.S)
           if matches:
-              obj = json.loads(matches[-1])
-              print('BUILD_STATUS=' + obj.get('status','FAILED'))
+              try:
+                  obj = json.loads(matches[-1])
+                  print('BUILD_STATUS=' + obj.get('status','FAILED'))
+              except:
+                  print('BUILD_STATUS=FAILED')
           else:
               print('BUILD_STATUS=FAILED')
           " >> $GITHUB_ENV
 
+      - name: Debug - List workspace files
+        run: |
+          echo "Listing all files in workspace for debugging..."
+          ls -R . | head -n 200
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: android-build-result
           path: |
-            ${{ env.OUTPUT_DIR }}/*.apk
-            ${{ env.OUTPUT_DIR }}/*.aab
-            ${{ env.OUTPUT_DIR }}/*.log
+            android_working_dir/output/*.apk
+            android_working_dir/output/*.aab
+            android_working_dir/output/*.log
           retention-days: 7
+          if-no-files-found: warn
 
       - name: Check build result
         run: |

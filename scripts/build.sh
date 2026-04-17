@@ -16,7 +16,7 @@ die()  { echo -e "${RED}[FAIL]${RESET} $*" >&2; exit 1; }
 
 # ─── Defaults / overridable env ───────────────────────────────────────────────
 REPO_URL="${1:-}"
-BASE_DIR="$(pwd)/android_working_dir"
+BASE_DIR="$(readlink -f "android_working_dir")"
 WORK_DIR="${WORK_DIR:-$BASE_DIR/build}"
 OUTPUT_DIR="${OUTPUT_DIR:-$BASE_DIR/output}"
 KEYSTORE_PATH="${KEYSTORE_PATH:-}"
@@ -53,15 +53,15 @@ emit_json() {
                | python3 -c "import sys,json; print(json.dumps([l.rstrip() for l in sys.stdin if l.strip()]))")
 
     python3 - <<EOF
-import json, sys
+import json, sys, os
 data = {
-    "status":       "$BUILD_STATUS",
+    "status":       os.environ.get("BUILD_STATUS", "FAILED"),
     "apk":          $apk_json,
     "aab":          $aab_json,
-    "logs_summary": "$LOGS_SUMMARY",
+    "logs_summary": os.environ.get("LOGS_SUMMARY", ""),
     "errors":       $err_json,
-    "build_duration_seconds": $duration,
-    "project_name": "$(basename "${REPO_URL:-ManusApp}" .git)"
+    "build_duration_seconds": int("$duration"),
+    "project_name": os.path.basename(os.environ.get("REPO_URL", "ManusApp")).replace(".git", "")
 }
 print(json.dumps(data, indent=2))
 EOF
@@ -321,6 +321,8 @@ finalise() {
 
     LOGS_SUMMARY="Build finished. APKs: ${#APK_PATHS[@]}, AABs: ${#AAB_PATHS[@]}, Errors: ${#ERRORS[@]}."
     log "Phase 6 — Status: ${BUILD_STATUS}"
+
+    export BUILD_STATUS LOGS_SUMMARY REPO_URL
 }
 
 # =============================================================================
