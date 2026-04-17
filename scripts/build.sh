@@ -88,10 +88,16 @@ preflight() {
 # PHASE 1 — Extract & Analyse
 # =============================================================================
 extract_and_analyse() {
-    rm -rf "$WORK_DIR"
-    mkdir -p "$WORK_DIR"
+    # If the WORK_DIR already contains a project (e.g. cloned by workflow), use it.
+    # Otherwise, check if we need to clone or scaffold.
 
-    if [[ -n "$REPO_URL" ]]; then
+    if [[ ! -d "$WORK_DIR" ]]; then
+        mkdir -p "$WORK_DIR"
+    fi
+
+    if [[ -n "$(ls -A "$WORK_DIR" 2>/dev/null)" ]]; then
+        log "Phase 1 — Working directory not empty. Using existing files."
+    elif [[ -n "$REPO_URL" ]]; then
         log "Phase 1 — Cloning repository: $REPO_URL"
         if git clone --depth 1 "$REPO_URL" "$WORK_DIR"; then
             ok "Successfully cloned repository."
@@ -99,7 +105,7 @@ extract_and_analyse() {
             warn "Failed to clone repository. Scaffolding will proceed."
         fi
     else
-        log "Phase 1 — No Repository URL provided. Scaffolding will proceed."
+        log "Phase 1 — No project found and no Repository URL provided. Scaffolding will proceed."
     fi
 
     PROJECT_DIR="$WORK_DIR"
