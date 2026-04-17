@@ -66,6 +66,14 @@ jobs:
       - name: Make scripts executable
         run: chmod +x scripts/*.sh
 
+      - name: Clone Project
+        if: github.event.inputs.repo_url != ''
+        run: |
+          rm -rf "$WORK_DIR"
+          mkdir -p "$WORK_DIR"
+          git clone --depth 1 "${{ github.event.inputs.repo_url }}" "$WORK_DIR"
+          echo "PROJECT_CLONED=true" >> $GITHUB_ENV
+
       - name: Run build pipeline
         id: build_pipeline
         run: |
